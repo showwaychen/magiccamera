@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ProjectModuleManager">
+    <modules>
+      <module fileurl="file://$PROJECT_DIR$/MagicCamera.iml" filepath="$PROJECT_DIR$/MagicCamera.iml" />
+      <module fileurl="file://$PROJECT_DIR$/app/app.iml" filepath="$PROJECT_DIR$/app/app.iml" />
+      <module fileurl="file://E:\githubproject\magiccamera\MagicCamera\faceeffects\faceeffects.iml" filepath="E:\githubproject\magiccamera\MagicCamera\faceeffects\faceeffects.iml" />
+      <module fileurl="file://E:\githubproject\magiccamera\MagicCamera\feffectsdemo\feffectsdemo.iml" filepath="E:\githubproject\magiccamera\MagicCamera\feffectsdemo\feffectsdemo.iml" />
+      <module fileurl="file://$PROJECT_DIR$/magiccameralib/magiccameralib.iml" filepath="$PROJECT_DIR$/magiccameralib/magiccameralib.iml" />
+    </modules>
+  </component>
+</project>
