@@ -21,13 +21,13 @@ public class GPUImageBeautifyFilter extends GPUImageFilter {
             "    uniform highp float brightness;\n" + //要调整的明亮度。
             "\n" +
             "    const highp vec3 W = vec3(0.299, 0.587, 0.114);\n" +  //rgb转成灰度图公式。
-            "    const highp mat3 saturateMatrix = mat3(\n" +
+            "    const highp mat3 saturateMatrix = mat3(\n" +  //计算饱合度公式
             "        1.1102, -0.0598, -0.061,\n" +
             "        -0.0774, 1.0826, -0.1186,\n" +
             "        -0.0228, -0.0228, 1.1772);\n" +
             "    highp vec2 blurCoordinates[24];\n" +//去噪模糊，卷积核。保存的是卷积核的各个坐标。
             "\n" +
-            "    highp float hardLight(highp float color) {\n" +//???
+            "    highp float hardLight(highp float color) {\n" +//高亮，突出噪点。
             "    if (color <= 0.5)\n" +
             "        color = color * color * 2.0;\n" +
             "    else\n" +
@@ -90,7 +90,7 @@ public class GPUImageBeautifyFilter extends GPUImageFilter {
             "\n" +
             "    sampleColor = sampleColor / 62.0;\n" +
             "\n" +
-            "    highp float highPass = centralColor.g - sampleColor + 0.5;\n" +
+            "    highp float highPass = centralColor.g - sampleColor  + 0.5;\n" +  //计算出高反差保留值(英文名即highPass)。
             "\n" +
             "    for (int i = 0; i < 5; i++) {\n" +
             "        highPass = hardLight(highPass);\n" +
@@ -99,13 +99,13 @@ public class GPUImageBeautifyFilter extends GPUImageFilter {
             "\n" +
             "    highp float alpha = pow(lumance, params.r);\n" +  //通过传进来的param中的第一个通道值，来提升明度。此公式是伽马变换，(参数小于1的情况下)此变换提升整体亮度。
             "\n" +
-            "    highp vec3 smoothColor = centralColor + (centralColor-vec3(highPass))*alpha*0.1;\n" +
+            "    highp vec3 smoothColor = centralColor + (centralColor - vec3(highPass))*alpha*0.1;\n" +  //做下混合 x * (1 - a) + a * y = x + (y - x) * a
             "\n" +
-            "    smoothColor.r = clamp(pow(smoothColor.r, params.g), 0.0, 1.0);\n" +  //clamp将值归入指定的区间内。
+            "    smoothColor.r = clamp(pow(smoothColor.r, params.g), 0.0, 1.0);\n" +  //提升整体的亮度。参数值越小提升的越多。
             "    smoothColor.g = clamp(pow(smoothColor.g, params.g), 0.0, 1.0);\n" +
             "    smoothColor.b = clamp(pow(smoothColor.b, params.g), 0.0, 1.0);\n" +
             "\n" +
-            "    highp vec3 lvse = vec3(1.0)-(vec3(1.0)-smoothColor)*(vec3(1.0)-centralColor);\n" +
+            "    highp vec3 lvse = vec3(1.0)-(vec3(1.0)-smoothColor)*(vec3(1.0)-centralColor);\n" +  //以灰度值作为透明度将原图与混合后结果进行滤色、柔光等混合，并调节饱和度
             "    highp vec3 bianliang = max(smoothColor, centralColor);\n" +
             "    highp vec3 rouguang = 2.0*centralColor*smoothColor + centralColor*centralColor - 2.0*centralColor*centralColor*smoothColor;\n" +
             "\n" +
@@ -113,8 +113,8 @@ public class GPUImageBeautifyFilter extends GPUImageFilter {
             "    gl_FragColor.rgb = mix(gl_FragColor.rgb, bianliang, alpha);\n" +
             "    gl_FragColor.rgb = mix(gl_FragColor.rgb, rouguang, params.b);\n" +
             "\n" +
-            "    highp vec3 satcolor = gl_FragColor.rgb * saturateMatrix;\n" +
-            "    gl_FragColor.rgb = mix(gl_FragColor.rgb, satcolor, params.a);\n" +
+            "    highp vec3 satcolor = gl_FragColor.rgb * saturateMatrix;\n" +  //计算饱合度。
+            "    gl_FragColor.rgb = mix(gl_FragColor.rgb, satcolor, params.a);\n" +  //根据参数将饱合度与当前颜色rgb值混合。
             "    gl_FragColor.rgb = vec3(gl_FragColor.rgb + vec3(brightness));\n" +
             "}";
     private int mSingleStepOffsetLocation;
@@ -146,7 +146,7 @@ public class GPUImageBeautifyFilter extends GPUImageFilter {
     public void setParams(float params) {
         mParams = params;
 //        float paramvec[] = {params, params, params, params};
-        float paramvec[] = {0.6f, params, params, params};
+        float paramvec[] = {0.33f, 0.33f, params, params};
 
         setFloatVec4(mParamsLocation, paramvec);
     }

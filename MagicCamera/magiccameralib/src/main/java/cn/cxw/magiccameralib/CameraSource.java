@@ -349,6 +349,7 @@ public class CameraSource extends GPUImageFilter {
         destroySurfaceTexture();
         stopPreview();
         createSurfaceTexture();
+        adjustImageScaling();
         startPreview();
     }
     public void switchCamera() {

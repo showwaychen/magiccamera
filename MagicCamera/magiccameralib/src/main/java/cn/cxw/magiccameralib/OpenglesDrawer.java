@@ -7,8 +7,14 @@ import java.util.LinkedList;
  */
 
 public abstract  class OpenglesDrawer {
+    public static enum DrawerState
+    {
+        NONE, INITIALING, INITIALIZED, DESTROYING, DESTROYED
+    }
     private final LinkedList<Runnable> mRunOnDraw;
-    boolean mIsInitialized = false;
+    protected boolean mIsInitialized = false;
+    protected boolean mInitialing = false;
+    protected  DrawerState mState = DrawerState.NONE;
 
     protected int mOutputWidth;
     protected int mOutputHeight;
@@ -16,8 +22,14 @@ public abstract  class OpenglesDrawer {
         mRunOnDraw = new LinkedList<Runnable>();
     }
     public final void init() {
+        synchronized (this) {
+            if (mState == DrawerState.INITIALIZED || mState == DrawerState.DESTROYING) {
+                return;
+            }
+            mState = DrawerState.INITIALING;
+        }
+        mInitialing = true;
         onInit();
-        mIsInitialized = true;
         onInitialized();
     }
     protected  void onInit()
@@ -25,6 +37,10 @@ public abstract  class OpenglesDrawer {
 
     }
     protected void onInitialized() {
+        synchronized (this) {
+            mState = DrawerState.INITIALIZED;
+        }
+        mIsInitialized = true;
     }
     protected void preOnDraw()
     {
@@ -43,14 +59,26 @@ public abstract  class OpenglesDrawer {
     abstract protected void onDraw();
     public void destroy()
     {
+        synchronized (this) {
+            if (mState == DrawerState.DESTROYED || mState == DrawerState.DESTROYING) {
+                return;
+            }
+            mState = DrawerState.DESTROYING;
+        }
         mIsInitialized = false;
         onDestroy();
     }
     protected void onDestroy() {
+        synchronized (this) {
+            mState = DrawerState.DESTROYED;
+        }
     }
 
     public boolean isInitialized() {
-        return mIsInitialized;
+//        return mIsInitialized;
+        synchronized (this) {
+            return mState == DrawerState.INITIALIZED;
+        }
     }
     protected void runPendingOnDrawTasks() {
         while (!mRunOnDraw.isEmpty()) {
@@ -58,6 +86,13 @@ public abstract  class OpenglesDrawer {
         }
     }
     protected void runOnDraw(final Runnable runnable) {
+        synchronized (this)
+        {
+            if (mState == DrawerState.DESTROYED || mState == DrawerState.DESTROYING)
+            {
+                return ;
+            }
+        }
         synchronized (mRunOnDraw) {
             mRunOnDraw.addLast(runnable);
         }

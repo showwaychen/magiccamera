@@ -10,6 +10,8 @@ import android.support.annotation.RequiresApi;
 import android.util.Log;
 
 import java.nio.ByteBuffer;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 import cn.cxw.magiccameralib.imagefilter.DisplayFilter;
 import cn.cxw.magiccameralib.imagefilter.GPUImageFilter;
@@ -101,11 +103,16 @@ public class MagicCamera extends OpenglesDrawer implements CameraSource.CameraEv
     class FrameOnCapture implements OpenglCapture.IFrameCaptured
     {
         @Override
-        public void onPreviewFrame(ByteBuffer byteBuffer, int i, int i1, int i2, long l) {
-
+        public void onPreviewFrame(ByteBuffer directFrameBuffer, int stride, int width, int height, long ptsMS) {
+            if (mFrameObserver != null)
+            {
+                mFrameObserver.OnProcessingFrame(directFrameBuffer, stride, width, height);
+            }
         }
     }
     int mSharedTextId = OpenglCommon.NO_TEXTURE;
+    Object mSharedToken = new Object();
+    Lock lock = new ReentrantLock();
     class PreviewRender implements GlRenderThread.GLRenderer
     {
 //        GPUImageFilter mPreviewFilter = new GPUImageFilter();
@@ -116,6 +123,10 @@ public class MagicCamera extends OpenglesDrawer implements CameraSource.CameraEv
 //            mPreviewFilter.init();
             mWidth = i;
             mHeight = i1;
+            if (mbUseImageReaderThread)
+            {
+                startImageReaderGLThread();
+            }
         }
 
         @Override
@@ -128,10 +139,17 @@ public class MagicCamera extends OpenglesDrawer implements CameraSource.CameraEv
         @Override
         public void onGlDrawFrame() {
             GLES20.glViewport(0, 0, mWidth, mHeight);
-            GLES20.glClearColor(255, 255, 255, 1);
+            GLES20.glClearColor(0, 0, 0, 1);
             GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT | GLES20.GL_DEPTH_BUFFER_BIT);
-//            mPreviewFilter.onDraw(mSharedTextId, mCubeBuffer, mDisplayTextureBuffer);
+//            Log.d(TAG, "onGlDrawFrame prelock");
+            lock.lock();
+//            Log.d(TAG, "onGlDrawFrame locked");
             previewDisplay(mSharedTextId);
+            GLES20.glFinish();
+//            Log.d(TAG, "onGlDrawFrame preunlock");
+            lock.unlock();
+//            Log.d(TAG, "onGlDrawFrame unlock");
+
         }
 
         @Override
@@ -192,6 +210,8 @@ public class MagicCamera extends OpenglesDrawer implements CameraSource.CameraEv
 
         }
     }
+
+
     public void setPreviewView(IPreviewView pview)
     {
         mPreviewView = pview;
@@ -201,9 +221,6 @@ public class MagicCamera extends OpenglesDrawer implements CameraSource.CameraEv
             pview.addRenderCallback(this);
         }
     }
-
-
-
     boolean initFilter()
     {
         if (mContext == null)
@@ -217,6 +234,10 @@ public class MagicCamera extends OpenglesDrawer implements CameraSource.CameraEv
             mDisplayFilter = new DisplayFilter();
         }
         mCameraSource.init();
+//        if (mbUseImageReaderThread) {
+            mFrameWidth = mCameraSource.getOutputWidth();
+            mFrameHeight = mCameraSource.getOutputHeight();
+//        }
         mDisplayFilter.init();
         mFilter.init();
         if (mOpenglDrawer != null)
@@ -243,16 +264,7 @@ public class MagicCamera extends OpenglesDrawer implements CameraSource.CameraEv
     // @Override GlRenderThread.GLRenderer
     @Override
     public void onGlInit(int width, int height) {
-        if (!initFilter())
-        {
-            Log.e(TAG, "filter init failed");
-            return ;
-        }
         init();
-        if (mbUseImageReaderThread)
-        {
-            startPreviewGlThread();
-        }
     }
     @Override
     public void onGlResize(int width, int height) {
@@ -273,6 +285,16 @@ public class MagicCamera extends OpenglesDrawer implements CameraSource.CameraEv
 
     // @Override  OpenglesDrawer
     @Override
+    protected void onInit() {
+        if (!initFilter())
+        {
+            Log.e(TAG, "filter init failed");
+            return ;
+        }
+        super.onInit();
+    }
+
+    @Override
     protected void onDraw() {
         if (mFrameBuffer == null)
         {
@@ -286,65 +308,115 @@ public class MagicCamera extends OpenglesDrawer implements CameraSource.CameraEv
             }
             if (!mbUseImageReaderThread)
             {
-                mOpenglCapture.initCapture(mCameraSource.getOutputWidth(), mCameraSource.getOutputHeight());
+//                mOpenglCapture.initCapture(mCameraSource.getOutputWidth(), mCameraSource.getOutputHeight());
+                mOpenglCapture.initCapture(getFrameWidth(), getFrameHeight());
+
             }
         }
-        GLES20.glViewport(0, 0, mFrameBuffer.getWidth(), mFrameBuffer.getHeight());
+
         int displaytextureid = OpenglCommon.NO_TEXTURE;
+//        Log.d(TAG, "ondraw prelock");
+//        Log.d(TAG, "ondraw lock");
         mCameraSource.draw();
-        displaytextureid = mCameraSource.getTextureId();
+        lock.lock();
         mFrameBuffer.activeFrameBuffer();
-        if(mOpenglDrawer == null)
+        GLES20.glViewport(0, 0, mFrameBuffer.getWidth(), mFrameBuffer.getHeight());
+        GLES20.glClearColor(0, 0, 0, 1);
+        GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT | GLES20.GL_DEPTH_BUFFER_BIT);
+        if(mOpenglDrawer != null)
         {
-//            mFilter.onDraw(mCameraSource.getTextureId());
-            displaytextureid = mCameraSource.getTextureId();
+//            synchronized (this)
+//            {
+            if (mOpenglDrawer instanceof GPUImageFilter)
+                {
+                    ((GPUImageFilter)mOpenglDrawer).onDraw(mCameraSource.getTextureId());
+                }
+                else if (mOpenglDrawer instanceof OpenglesDrawerEx)
+                {
+                    ((OpenglesDrawerEx)mOpenglDrawer).setTexture(mCameraSource.getTextureId());
+                    mOpenglDrawer.draw();
+                }
+                else
+                {
+                    mFilter.onDraw(mCameraSource.getTextureId());
+                    mOpenglDrawer.draw();
+                }
+
         }
         else
         {
-            if (mOpenglDrawer instanceof GPUImageFilter)
-            {
-                ((GPUImageFilter)mOpenglDrawer).onDraw(mCameraSource.getTextureId());
-            }
-            else if (mOpenglDrawer instanceof OpenglesDrawerEx)
-            {
-                ((OpenglesDrawerEx)mOpenglDrawer).setTexture(mCameraSource.getTextureId());
-                mOpenglDrawer.draw();
-            }
-            else
-            {
-                mFilter.onDraw(mCameraSource.getTextureId());
-                mOpenglDrawer.draw();
-            }
-            displaytextureid = mFrameBuffer.getTextureId();
+            mFilter.onDraw(mCameraSource.getTextureId());
         }
-        if (!mbUseImageReaderThread && mFrameObserver != null) {
-            mOpenglCapture.setTextureId(displaytextureid);
-            mOpenglCapture.onCapture();
-        }
-        mFrameBuffer.disactiveFrameBuffer();
-        //用于画在ImageReader的surface中。
 
+        mFrameBuffer.disactiveFrameBuffer();
+        lock.unlock();
+        displaytextureid = mFrameBuffer.getTextureId();
+//        }
+        //用于画在ImageReader的surface中。
         if(mbUseImageReaderThread  && mGlRenderThread != null)
         {
-            mSharedTextId = displaytextureid;
-            mGlRenderThread.requestRender();
-
+            //此地方要做下线程同步，因为在不同的线程会使用同一个mDisplayFilter
+            lock.lock();
             mDisplayFilter.onOutputSizeChanged(mOutputWidth, mOutputHeight);
             mDisplayFilter.setTextureid(displaytextureid);
+            GLES20.glClearColor(0, 0, 0, 1);
+            GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT | GLES20.GL_DEPTH_BUFFER_BIT);
             mDisplayFilter.draw();
+            lock.unlock();
             if (mOpenglDrawer != null && mOpenglDrawer instanceof OpenglesDrawerEx)
             {
-                ((OpenglesDrawerEx)mOpenglDrawer).offScreenOnDraw();
+                ((OpenglesDrawerEx)mOpenglDrawer).onScreenOnDraw(mOpenglDrawer.getOutputWidth(), mOpenglDrawer.getOutputHeight());
             }
+            mSharedTextId = displaytextureid;
+            mGlRenderThread.requestRender();
         }
         else
         {
             previewDisplay(displaytextureid);
+            mFrameBuffer.activeFrameBuffer();
+            GLES20.glViewport(0, 0, mFrameBuffer.getWidth(), mFrameBuffer.getHeight());
+            GLES20.glClearColor(0, 0, 0, 1);
+            GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT | GLES20.GL_DEPTH_BUFFER_BIT);
+            if (mOpenglDrawer != null && mOpenglDrawer instanceof OpenglesDrawerEx)
+            {
+                ((OpenglesDrawerEx)mOpenglDrawer).offScreenOnDraw();
+            }
+            //在屏渲染时，用glReadPixels读出的图像是倒的。
+            //此函数原型glReadPixels(
+//            int x,
+//            int y,
+//            int width,
+//            int height,
+//            int format,
+//            int type,
+//            java.nio.Buffer pixels
+//           );
+            //glReadPixels 读的值是从左下角开始的，在opengl es中 坐标系的原点在左下角。但一般的图像是以左上角为原点。
+            //这就导致能过这个函数获取的图像是倒的。
+            //但为什么显示的是正的呢？个人猜想，可能系统显示的时候，是从左上角取的数据。
+            //那为什么用此函数读离屏渲染使用的 frametexture时，是正的呢。
+            //个人猜想：
+            //图像坐标一般是以左上角为原点。这样主要是为了在内存存储的方便。
+            //         (0, 0)      (1, 0)
+            //
+            //         (0, 1)      (1, 1)
+            //但在opengles中使用的时候是以左下角为原点的。所以在使用贴图的时候在opengles世界中，此纹理是倒的。
+            //虽然是倒的，但glReadPixels是从左上角读的，所以读的图像就是正的。
+            if (!mbUseImageReaderThread && mFrameObserver != null) {
+                mOpenglCapture.setTextureId(displaytextureid);
+                mOpenglCapture.onCapture();
+            }
+            mFrameBuffer.disactiveFrameBuffer();
         }
+
     }
     //@Override
     void previewDisplay(int textureid)
     {
+        if (mDisplayFilter == null)
+        {
+            return ;
+        }
         mDisplayFilter.onOutputSizeChanged(preViewWidth, preViewHeight);
         mDisplayFilter.setTextureid(textureid);
         mDisplayFilter.draw();
@@ -364,6 +436,8 @@ public class MagicCamera extends OpenglesDrawer implements CameraSource.CameraEv
     public void onSurfaceChanged(@NonNull IPreviewView.ISurfaceHolder holder, int width, int height) {
         preViewWidth = width;
         preViewHeight = height;
+        mFrameWidth = preViewWidth;
+        mFrameHeight = preViewHeight;
         startPreView();
     }
     @Override
@@ -382,33 +456,33 @@ public class MagicCamera extends OpenglesDrawer implements CameraSource.CameraEv
         }
         mCameraSource.setDisplayRatio((float) preViewWidth / (float)preViewHeight);
         mCameraSource.adjustImageScaling();
-        if (mbUseImageReaderThread) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-                mOffScreenRender = new GlThreadImageReader(mCameraSource.getOutputWidth(), mCameraSource.getOutputHeight(), this);
-                mOffScreenRender.setImageAvailableListener(new ImageAvailable());
-                mOffScreenRender.start();
-            }
-            return ;
-        }
-        startPreviewGlThread();
-    }
-    void startPreviewGlThread()
-    {
         if (mGlRenderThread == null)
         {
             mGlRenderThread = new GlThreadPreview(mPreviewView);
         }
-        if (mbUseImageReaderThread && mOffScreenRender != null)
+        if (mbUseImageReaderThread)
         {
-            mGlRenderThread.setSharedContext(mOffScreenRender.getEglContext());
             mGlRenderThread.setRender(new PreviewRender());
-
+            mFrameWidth = mCameraSource.getOutputWidth();
+            mFrameHeight = mCameraSource.getOutputHeight();
         }
         else
         {
             mGlRenderThread.setRender(this);
         }
         mGlRenderThread.start();
+    }
+    void startImageReaderGLThread()
+    {
+        if (mbUseImageReaderThread) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+                mOffScreenRender = new GlThreadImageReader(mCameraSource.getOutputWidth(), mCameraSource.getOutputHeight(), this);
+                mOffScreenRender.setSharedContext(mGlRenderThread.getEglContext());
+                mOffScreenRender.setImageAvailableListener(new ImageAvailable());
+                mOffScreenRender.start();
+            }
+            return ;
+        }
     }
     public void stopPreview()
     {
@@ -446,5 +520,23 @@ public class MagicCamera extends OpenglesDrawer implements CameraSource.CameraEv
     public boolean isPreview()
     {
         return mCameraSource.isPreview();
+    }
+    int mFrameWidth = 0;
+    int mFrameHeight = 0;
+
+    /**
+     * @return 回调出来的图像的宽。
+     */
+    public int getFrameWidth()
+    {
+        return mFrameWidth;
+    }
+
+    /**
+     * @return 回调的图像的高。
+     */
+    public int getFrameHeight()
+    {
+        return mFrameHeight;
     }
 }

@@ -10,7 +10,6 @@ import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.Toast;
 
-import cn.cxw.magiccameralib.MagicCamera;
 import cn.cxw.magiccameralib.glthread.SurfaceViewPreview;
 import cn.cxw.magiccameralib.imagefilter.GPUImageBeautifyFilter;
 import cn.cxw.openglesutils.glthread.IPreviewView;
@@ -88,6 +87,7 @@ public class ActivityCamera extends Activity implements SVideoStream.IStreamEven
         mMagicCameraLive = new VideoStreamProxy();
         mMagicCameraLive.setVideoFrameSource(mMCFrameSource);
         mMagicCameraLive.setStreamEventObserver(this);
+
         //copy data to sdcard
     }
     @Override
